@@ -1,0 +1,55 @@
+# ==========================================
+# Codex AI Suite - .gitignore
+# ==========================================
+
+# ---------- 敏感配置文件（含密钥/邮箱/授权码）----------
+config.yaml
+codex_auto_register/config.json
+codex_auto_register/codex/config.json
+
+# ---------- 运行时生成的账号数据 ----------
+codex_auto_register/accounts.txt
+codex_auto_register/ak.txt
+codex_auto_register/rk.txt
+codex_auto_register/registered_accounts.csv
+codex_auto_register/registered_accounts.txt
+codex_auto_register/codex_tokens/
+codex_auto_register/codex/codex_accounts_tokens/
+codex_auto_register/test_run.log
+
+# ---------- 大型二进制文件 ----------
+cli-proxy-api.exe
+management.html
+
+# ---------- Node.js ----------
+node_modules/
+dist/
+.vite/
+
+# ---------- Python ----------
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.eggs/
+
+# ---------- 系统文件 ----------
+.DS_Store
+Thumbs.db
+*.log
+.env
+.env.*
+
+# ---------- IDE ----------
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ---------- 前端子项目的 Git 仓库 ----------
+Cli-Proxy-API-Management-Center-1.7.7/.git/
+codex_auto_register/.git/
+accounts.txt
+ak.txt
+rk.txt
+registered_accounts.csv
