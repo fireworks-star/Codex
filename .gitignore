@@ -6,50 +6,90 @@
 config.yaml
 codex_auto_register/config.json
 codex_auto_register/codex/config.json
+.env
+.env.*
 
-# ---------- 运行时生成的账号数据 ----------
+# ---------- 运行时生成的账号数据----------
+accounts.txt
+ak.txt
+rk.txt
+registered_accounts.csv
+registered_accounts.txt
 codex_auto_register/accounts.txt
 codex_auto_register/ak.txt
 codex_auto_register/rk.txt
 codex_auto_register/registered_accounts.csv
 codex_auto_register/registered_accounts.txt
+codex_auto_register/codex/accounts.txt
+codex_auto_register/codex/ak.txt
+codex_auto_register/codex/rk.txt
+codex_auto_register/codex/registered_accounts.csv
 codex_auto_register/codex_tokens/
 codex_auto_register/codex/codex_accounts_tokens/
-codex_auto_register/test_run.log
 
-# ---------- 大型二进制文件 ----------
+# ---------- 日志文件----------
+*.log
+*.tmp
+codex_auto_register/test_run.log
+logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# ---------- 大型二进制文件----------
 cli-proxy-api.exe
 management.html
 
-# ---------- Node.js ----------
+# ---------- Node.js----------
 node_modules/
 dist/
+dist-ssr/
 .vite/
+*.local
 
-# ---------- Python ----------
+# ---------- Python----------
 __pycache__/
 *.pyc
 *.pyo
+*.py[cod]
+*.pyd
 *.egg-info/
 .eggs/
+.python-version
+.venv/
+venv/
+env/
 
-# ---------- 系统文件 ----------
+# ---------- 系统文件----------
 .DS_Store
 Thumbs.db
-*.log
-.env
-.env.*
 
-# ---------- IDE ----------
+# ---------- IDE----------
 .vscode/
 .idea/
 *.swp
 *.swo
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+settings.local.json
 
-# ---------- 前端子项目的 Git 仓库 ----------
+# ---------- 子项目的Git仓库----------
 Cli-Proxy-API-Management-Center-1.7.7/.git/
 codex_auto_register/.git/
-accounts.txt
-ak.txt
-rk.txt
-registered_accounts.csv
+
+# ---------- 其他临时文件----------
+api.md
+usage.json
+CLAUDE.md
+AGENTS.md
+management-api*
+antigravity_usage.json
+codex_usage.json
+style.md
+rename_tokens.py
+skills
