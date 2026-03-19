@@ -14,17 +14,21 @@ Codex/
 ├── config.example.yaml                  # 网关配置模板
 ├── config.yaml                          # 网关实际配置（.gitignore 已排除）
 ├── management.html                      # 内置管理面板（需自行下载）
+├── clean_expired_auth_files.py          # 清理过期认证文件工具
 │
 ├── Cli-Proxy-API-Management-Center-1.7.7/   # 前端 Web 管理面板源码
 │   ├── src/                             # React + TypeScript 源代码
 │   └── package.json
 │
 ├── codex_auto_register/                 # 自动账号注册工具
+│   ├── chatgpt_register.py              # DuckMail 注册脚本
 │   ├── codex/
-│   │   ├── protocol_keygen.py           # 核心注册引擎（支持 IMAP 收码）
+│   │   ├── protocol_keygen.py           # 核心注册引擎
 │   │   ├── config.example.json          # 注册工具配置模板
 │   │   └── codex_accounts_tokens/       # Token 凭据输出目录
-│   └── config.json                      # 注册工具实际配置（.gitignore 已排除）
+│   ├── test/                            # 测试脚本目录
+│   ├── config.example.json              # 注册工具配置模板
+│   └── README.md                        # 注册工具文档
 │
 ├── start_all.bat                        # 一键启动全部服务
 ├── start_proxy.bat                      # 仅启动反代 + 前端（不含注册）
@@ -96,7 +100,7 @@ pip install curl_cffi requests
 | `stop_all.bat` | 一键停止全部后台服务 |
 
 ```bash
-# 全部启动
+# 全部启动并删除过期认证文件
 .\start_all.bat
 
 # 仅使用反代功能（已有账号池时推荐）
@@ -105,6 +109,25 @@ pip install curl_cffi requests
 # 停止所有服务
 .\stop_all.bat
 ```
+
+---
+
+## 🛠️ 工具说明
+
+### 清理过期认证文件
+
+项目提供了 `clean_expired_auth_files.py` 脚本，用于自动清理过期的认证文件：
+
+```bash
+python clean_expired_auth_files.py
+```
+
+该脚本会：
+- 扫描 `config.yaml` 中 `auth-dir` 指定的目录（默认为 `codex_auto_register/codex/codex_accounts_tokens/`）
+- 检查每个认证文件的过期时间
+- 删除已过期的认证文件
+- 主动验证 token 是否已被服务端吊销
+- 同步清理 `accounts.txt`、`registered_accounts.csv`、`ak.txt`、`rk.txt` 中的过期记录
 
 ---
 
