@@ -4,8 +4,6 @@
 
 # ---------- 敏感配置文件（含密钥/邮箱/授权码）----------
 config.yaml
-codex_auto_register/config.json
-codex_auto_register/codex/config.json
 .env
 .env.*
 
@@ -15,6 +13,35 @@ ak.txt
 rk.txt
 registered_accounts.csv
 registered_accounts.txt
+*.log
+*.tmp
+
+# ---------- 2925-mail-2api ----------
+2925-mail-2api/cookie.txt
+2925-mail-2api/__pycache__/
+2925-mail-2api/*.py[cod]
+2925-mail-2api/*$py.class
+2925-mail-2api/*.so
+2925-mail-2api/.Python
+2925-mail-2api/env/
+2925-mail-2api/venv/
+2925-mail-2api/ENV/
+2925-mail-2api/build/
+2925-mail-2api/dist/
+2925-mail-2api/*.egg-info/
+2925-mail-2api/config.json
+
+# ---------- codex_auto_register ----------
+codex_auto_register/config.json
+codex_auto_register/codex/config.json
+codex_auto_register/__pycache__/
+codex_auto_register/*.py[cod]
+codex_auto_register/*.pyo
+codex_auto_register/*.pyd
+codex_auto_register/.python-version
+codex_auto_register/.venv/
+codex_auto_register/venv/
+codex_auto_register/env/
 codex_auto_register/accounts.txt
 codex_auto_register/ak.txt
 codex_auto_register/rk.txt
@@ -26,17 +53,32 @@ codex_auto_register/codex/rk.txt
 codex_auto_register/codex/registered_accounts.csv
 codex_auto_register/codex_tokens/
 codex_auto_register/codex/codex_accounts_tokens/
+codex_auto_register/rename_tokens.py
+codex_auto_register/*.log
+codex_auto_register/*.tmp
 
-# ---------- 日志文件----------
-*.log
-*.tmp
-codex_auto_register/test_run.log
-logs
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
+# ---------- Cli-Proxy-API-Management-Center ----------
+Cli-Proxy-API-Management-Center-1.7.7/logs
+Cli-Proxy-API-Management-Center-1.7.7/*.log
+Cli-Proxy-API-Management-Center-1.7.7/npm-debug.log*
+Cli-Proxy-API-Management-Center-1.7.7/yarn-debug.log*
+Cli-Proxy-API-Management-Center-1.7.7/yarn-error.log*
+Cli-Proxy-API-Management-Center-1.7.7/pnpm-debug.log*
+Cli-Proxy-API-Management-Center-1.7.7/lerna-debug.log*
+Cli-Proxy-API-Management-Center-1.7.7/api.md
+Cli-Proxy-API-Management-Center-1.7.7/usage.json
+Cli-Proxy-API-Management-Center-1.7.7/CLAUDE.md
+Cli-Proxy-API-Management-Center-1.7.7/AGENTS.md
+Cli-Proxy-API-Management-Center-1.7.7/management-api*
+Cli-Proxy-API-Management-Center-1.7.7/antigravity_usage.json
+Cli-Proxy-API-Management-Center-1.7.7/codex_usage.json
+Cli-Proxy-API-Management-Center-1.7.7/style.md
+Cli-Proxy-API-Management-Center-1.7.7/node_modules/
+Cli-Proxy-API-Management-Center-1.7.7/dist/
+Cli-Proxy-API-Management-Center-1.7.7/dist-ssr/
+Cli-Proxy-API-Management-Center-1.7.7/*.local
+Cli-Proxy-API-Management-Center-1.7.7/skills
+Cli-Proxy-API-Management-Center-1.7.7/settings.local.json
 
 # ---------- 大型二进制文件----------
 cli-proxy-api.exe
@@ -76,11 +118,6 @@ Thumbs.db
 *.njsproj
 *.sln
 *.sw?
-settings.local.json
-
-# ---------- 子项目的Git仓库----------
-Cli-Proxy-API-Management-Center-1.7.7/.git/
-codex_auto_register/.git/
 
 # ---------- 其他临时文件----------
 api.md
