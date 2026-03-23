@@ -563,10 +563,37 @@ def _get_duckmail_domains(session):
     return ["duckmail.sbs"]
 
 
+def generate_sub_email_suffix(max_suffix_length=16):
+    """生成子邮箱后缀，支持字母、数字、下划线，长度 4-16 位"""
+    chars = string.ascii_lowercase + string.digits + "_"
+    length = random.randint(4, max_suffix_length)
+    return "".join(random.choice(chars) for _ in range(length))
+
+
 def create_temp_email(session):
-    """通过 API 创建临时邮箱账号，支持自定义域，返回 (email, dm_token)"""
+    """通过 API 创建临时邮箱账号，支持自定义域或 IMAP 用户子邮箱，返回 (email, dm_token)"""
     print("📧 创建临时邮箱...")
-    
+
+    # 优先使用 IMAP 用户邮箱生成子邮箱
+    if IMAP_USER:
+        if "@" in IMAP_USER:
+            main_local, main_domain = IMAP_USER.rsplit("@", 1)
+            
+            # 计算可用后缀长度，确保总长度不超过64个字符
+            max_suffix = 64 - len(main_local) - 1 - len(main_domain)
+            max_suffix = min(16, max(4, max_suffix))
+            
+            suffix = generate_sub_email_suffix(max_suffix)
+            username = f"{main_local}{suffix}"
+            email = f"{username}@{main_domain}"
+            
+            # 再次检查总长度
+            if len(email) > 64:
+                print(f"  ⚠️ 生成的邮箱地址过长 ({len(email)} > 64)，使用 DuckMail")
+            else:
+                print(f"  ✅ 使用 IMAP 用户子邮箱: {email} (长度: {len(email)})")
+                return email, "CUSTOM_IMAP_TOKEN"
+
     if CUSTOM_DOMAIN:
         name_len = random.randint(10, 14)
         name_chars = list(random.choices(string.ascii_lowercase, k=name_len))
@@ -684,58 +711,178 @@ def extract_verification_code(content):
     return None
 
 
-def wait_for_verification_code(session, email_address, dm_token, timeout=300):
+def wait_for_verification_code(session, email_address, dm_token, timeout=300, start_time=None):
     """等待验证邮件并提取验证码（支持 DuckMail 和 IMAP）"""
     print(f"  ⏳ 等待验证码 (最大 {timeout}s)...")
-    start = time.time()
+    start = start_time if start_time is not None else time.time()
 
-    if CUSTOM_DOMAIN and IMAP_SERVER:
+    # 判断是否使用 IMAP 模式：只要有 IMAP 配置就使用 IMAP
+    use_imap = bool(IMAP_SERVER and IMAP_USER and IMAP_PASS)
+    if use_imap:
+        print(f"  📧 使用 IMAP 模式，目标邮箱: {email_address}")
         import imaplib
         import email
-        from email.header import decode_header
+        from email.utils import parsedate_to_datetime
+        from datetime import datetime, timezone
+
+        # 记录开始时间,只提取此时间之后收到的邮件(避免使用旧验证码)
+        # 使用UTC时间戳,因为邮件时间也是UTC
+        # 减去60秒作为缓冲,避免因为时间差导致新邮件被误判为旧邮件
+        min_email_time = start - 60
+        print(f"  🕐 只提取 {datetime.fromtimestamp(min_email_time, tz=timezone.utc).strftime('%H:%M:%S UTC')} 之后收到的邮件")
+
         while time.time() - start < timeout:
             mail = None
             try:
-                mail = imaplib.IMAP4_SSL(IMAP_SERVER)
+                mail = imaplib.IMAP4_SSL(IMAP_SERVER, timeout=30)
                 mail.login(IMAP_USER, IMAP_PASS)
                 mail.select("inbox")
-                
-                # Fetch all unread emails to cover both "OpenAI" and "noreply@tm.openai.com" senders
-                status, messages = mail.search(None, '(UNSEEN)')
-                
-                if status == "OK" and messages[0]:
-                    email_ids = messages[0].split()
-                    email_ids.reverse()
-                    for eid in email_ids:
+
+                # 直接获取最近的 10 封邮件，不使用 SEARCH 命令
+                email_ids = []
+                try:
+                    status, messages = mail.select("inbox")
+                    if status == "OK":
+                        msg_count = int(messages[0]) if messages and messages[0] else 0
+                        if msg_count > 0:
+                            start_idx = max(1, msg_count - 9)
+                            for i in range(msg_count, start_idx - 1, -1):
+                                email_ids.append(str(i).encode())
+                            print(
+                                f"  📧 获取到 {len(email_ids)} 封邮件 (总数: {msg_count})"
+                            )
+                except Exception as e:
+                    print(f"  ⚠️ 获取邮件数量失败: {e}")
+                    for i in range(10, 0, -1):
+                        email_ids.append(str(i).encode())
+
+                for eid in email_ids:
+                    try:
                         status, msg_data = mail.fetch(eid, "(RFC822)")
                         if status == "OK":
                             for response_part in msg_data:
                                 if isinstance(response_part, tuple):
                                     msg = email.message_from_bytes(response_part[1])
+
+                                    # 检查发件人
+                                    from_header = str(msg.get("From", ""))
+                                    if "openai.com" not in from_header.lower():
+                                        continue
+
+                                    headers_to = str(msg.get("To", ""))
+                                    subject = str(msg.get("Subject", ""))
+                                    print(
+                                        f"  📧 检查邮件 -> To: {headers_to[:50]}, Subject: {subject[:50]}"
+                                    )
+
+                                    # 过滤掉 bounces 邮件和退信通知
+                                    if (
+                                        "bounces" in from_header.lower()
+                                        or "bounce" in subject.lower()
+                                        or "delivery status" in subject.lower()
+                                    ):
+                                        print(f"  ⏭️ 跳过退信邮件")
+                                        continue
+
+                                    # 只处理包含验证码的邮件（Subject 包含 ChatGPT 或 verification）
+                                    if (
+                                        "chatgpt" not in subject.lower()
+                                        and "verification" not in subject.lower()
+                                        and "code" not in subject.lower()
+                                    ):
+                                        print(f"  ⏭️ 跳过非验证码邮件")
+                                        continue
+
+                                    # 检查是否是发给目标邮箱的邮件
+                                    # 对于子邮箱，检查目标邮箱是否在 To 头中，或者检查主邮箱匹配
+                                    email_match = False
+                                    if (
+                                        email_address
+                                        and email_address.lower() in headers_to.lower()
+                                    ):
+                                        email_match = True
+                                        print(f"  ✅ 邮件匹配目标邮箱: {email_address}")
+                                    elif (
+                                        IMAP_USER
+                                        and IMAP_USER.lower() in headers_to.lower()
+                                    ):
+                                        # 子邮箱情况：邮件可能显示主邮箱地址
+                                        email_match = True
+                                        print(f"  ✅ 邮件匹配主邮箱: {IMAP_USER}")
+
+                                    if not email_match:
+                                        continue
+
+                                    # 检查邮件时间,只提取开始时间之后收到的邮件(避免使用旧验证码)
+                                    date_header = str(msg.get("Date", ""))
+                                    try:
+                                        email_time = parsedate_to_datetime(date_header).timestamp()
+                                        if email_time < min_email_time:
+                                            print(f"  ⏭️ 跳过旧邮件 (时间: {date_header[:30]})")
+                                            continue
+                                    except Exception as e:
+                                        print(f"  ⚠️ 解析邮件时间失败: {e}")
+                                        continue
+
+                                    # 是新邮件，等待2-4秒后再提取验证码,避免验证太快
+                                    import random
+                                    delay = random.uniform(2, 4)
+                                    print(f"  ⏳ 匹配到新邮件,等待 {delay:.1f} 秒后提取验证码...")
+                                    time.sleep(delay)
+
                                     content = ""
                                     if msg.is_multipart():
                                         for part in msg.walk():
-                                            if part.get_content_type() in ["text/plain", "text/html"]:
-                                                try: content += part.get_payload(decode=True).decode(errors="ignore")
-                                                except: pass
+                                            if part.get_content_type() in [
+                                                "text/plain",
+                                                "text/html",
+                                            ]:
+                                                try:
+                                                    payload = part.get_payload(
+                                                        decode=True
+                                                    )
+                                                    if payload:
+                                                        content += payload.decode(
+                                                            errors="ignore"
+                                                        )
+                                                except:
+                                                    pass
                                     else:
-                                        try: content += msg.get_payload(decode=True).decode(errors="ignore")
-                                        except: pass
+                                        try:
+                                            payload = msg.get_payload(decode=True)
+                                            if payload:
+                                                content += payload.decode(
+                                                    errors="ignore"
+                                                )
+                                        except:
+                                            pass
 
-                                    headers_to = str(msg.get("To", ""))
-                                    if email_address.lower() not in headers_to.lower() and email_address.lower() not in content.lower():
-                                        continue
-                                        
                                     code = extract_verification_code(content)
                                     if code:
                                         print(f"  ✅ IMAP 验证码: {code}")
                                         try:
-                                            mail.store(eid, '+FLAGS', '\\Seen')
+                                            mail.store(eid, "+FLAGS", "\\Seen")
+                                        except:
+                                            pass
+                                        try:
                                             mail.close()
                                             mail.logout()
-                                        except Exception:
+                                        except:
                                             pass
                                         return code
+                    except Exception as e:
+                        print(f"  ⚠️ 处理单封邮件异常: {e}")
+                        continue
+
+                if not email_ids:
+                    print("  ⚠️ 没有获取到邮件ID")
+
+                try:
+                    mail.close()
+                    mail.logout()
+                except:
+                    pass
+
             except Exception as e:
                 print(f"  ⚠️ IMAP 获取异常: {e}")
             finally:
@@ -748,11 +895,11 @@ def wait_for_verification_code(session, email_address, dm_token, timeout=300):
                         mail.logout()
                     except:
                         pass
-            
+
             elapsed = int(time.time() - start)
             print(f"    IMAP 等待中... ({elapsed}s/{timeout}s)")
             time.sleep(5)
-            
+
         print("  ⏰ IMAP 等待验证码超时")
         return None
 
@@ -1432,31 +1579,38 @@ def perform_codex_oauth_login_http(
         mail_session = create_session()
 
         # 关键认知：当 password/verify 返回 email_otp_verification 时，
-        # 服务端已经自动发送了 OTP 邮件！立即开始轮询检查。
+        # 服务端已经自动发送了 OTP 邮件！立即记录开始时间。
 
-        # 记录初始邮件数量（注册阶段的）
-        initial_emails = fetch_emails(mail_session, email, dm_token)
-        initial_count = len(initial_emails) if initial_emails else 0
+        # 记录开始时间戳,用于时间戳筛选
+        otp_start_time = time.time()
 
         # 轮询等待邮件到达，收集所有验证码并依次尝试
-        print(f"  ⏳ 开始监视邮箱（当前 {initial_count} 封）...")
+        print(f"  ⏳ 开始监视邮箱...")
         code = None
         tried_codes = set()  # 已尝试过的验证码，避免重复提交
-        start_time = time.time()
 
-        h_val = dict(COMMON_HEADERS)
-        h_val["referer"] = f"{OAUTH_ISSUER}/email-verification"
-        h_val["oai-device-id"] = device_id
-        h_val.update(generate_datadog_trace())
+        # 使用步骤3的 headers 作为基础，保持 session 连续性
+        headers["referer"] = f"{OAUTH_ISSUER}/email-verification"
+        headers.update(generate_datadog_trace())
 
-        code = wait_for_verification_code(mail_session, email, dm_token, timeout=300)
+        # 获取 email_otp_validate 的 sentinel token
+        sentinel_otp = build_sentinel_token(
+            session, device_id, flow="email_otp_validate"
+        )
+        if sentinel_otp:
+            headers["openai-sentinel-token"] = sentinel_otp
+
+        # 传递开始时间,确保时间戳筛选正确
+        code = wait_for_verification_code(mail_session, email, dm_token, timeout=300, start_time=otp_start_time)
 
         if code:
             print(f"  🔢 尝试验证码: {code}")
+            # 重新生成 datadog trace（时间戳更新）
+            headers.update(generate_datadog_trace())
             resp = session.post(
                 f"{OAUTH_ISSUER}/api/accounts/email-otp/validate",
                 json={"code": code},
-                headers=h_val,
+                headers=headers,
                 verify=False,
                 timeout=30,
             )
@@ -2398,7 +2552,7 @@ def upload_token_json(filename):
                 headers=headers,
                 verify=False,
                 timeout=30,
-                proxies={"http": None, "https": None, "all": None}
+                proxies={"http": None, "https": None, "all": None},
             )
 
             if resp.status_code == 200:
@@ -2477,10 +2631,9 @@ def register_one(worker_id=0, task_index=0, total=1):
     if not success:
         return email, password, False, t_reg, t_reg
 
-    save_account(email, password)
     print(f"  📝 注册耗时: {t_reg:.1f}s")
 
-    # 3. Codex OAuth 登录
+    # 3. Codex OAuth 登录（必须成功）
     tokens = None
     try:
         tokens = perform_codex_oauth_login_http(
@@ -2492,20 +2645,19 @@ def register_one(worker_id=0, task_index=0, total=1):
 
         if not tokens:
             print(f"{tag}  ❌ 纯 HTTP OAuth 失败")
+            return email, password, False, t_reg, time.time() - t_start
 
         t_total = time.time() - t_start
-        if tokens:
-            save_tokens(email, tokens)
-            print(
-                f"{tag} ✅ {email} | 注册 {t_reg:.1f}s + OAuth {t_total - t_reg:.1f}s = 总 {t_total:.1f}s"
-            )
-        else:
-            print(f"{tag} ⚠️ OAuth 失败（注册已成功）")
+        save_tokens(email, tokens)
+        save_account(email, password)
+        print(
+            f"{tag} ✅ {email} | 注册 {t_reg:.1f}s + OAuth {t_total - t_reg:.1f}s = 总 {t_total:.1f}s"
+        )
+        return email, password, True, t_reg, t_total
     except Exception as e:
         t_total = time.time() - t_start
         print(f"{tag} ⚠️ OAuth 异常: {e}")
-
-    return email, password, True, t_reg, t_total
+        return email, password, False, t_reg, t_total
 
 
 def run_batch():
