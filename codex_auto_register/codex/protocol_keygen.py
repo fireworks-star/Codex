@@ -56,6 +56,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import urllib3
+from email.utils import parsedate_to_datetime
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
@@ -524,7 +525,7 @@ class SentinelTokenGenerator:
             result = self._run_check(start_time, seed, difficulty, config, i)
             if result:
                 elapsed = time.time() - start_time
-                print(f"  ✅ PoW 完成: {i+1} 次迭代, 耗时 {elapsed:.2f}s")
+                print(f"  ✅ PoW 完成: {i + 1} 次迭代, 耗时 {elapsed:.2f}s")
                 return "gAAAAAB" + result
 
         # PoW 失败（超过最大尝试次数），返回错误 token
@@ -578,15 +579,15 @@ def create_temp_email(session):
     if IMAP_USER:
         if "@" in IMAP_USER:
             main_local, main_domain = IMAP_USER.rsplit("@", 1)
-            
+
             # 计算可用后缀长度，确保总长度不超过64个字符
             max_suffix = 64 - len(main_local) - 1 - len(main_domain)
             max_suffix = min(16, max(4, max_suffix))
-            
+
             suffix = generate_sub_email_suffix(max_suffix)
             username = f"{main_local}{suffix}"
             email = f"{username}@{main_domain}"
-            
+
             # 再次检查总长度
             if len(email) > 64:
                 print(f"  ⚠️ 生成的邮箱地址过长 ({len(email)} > 64)，使用 DuckMail")
@@ -711,10 +712,11 @@ def extract_verification_code(content):
     return None
 
 
-def wait_for_verification_code(session, email_address, dm_token, timeout=300, start_time=None):
+def wait_for_verification_code(
+    session, email_address, dm_token, timeout=300, start_time=None
+):
     """等待验证邮件并提取验证码（支持 DuckMail 和 IMAP）"""
     print(f"  ⏳ 等待验证码 (最大 {timeout}s)...")
-    start = start_time if start_time is not None else time.time()
 
     # 判断是否使用 IMAP 模式：只要有 IMAP 配置就使用 IMAP
     use_imap = bool(IMAP_SERVER and IMAP_USER and IMAP_PASS)
@@ -723,29 +725,22 @@ def wait_for_verification_code(session, email_address, dm_token, timeout=300, st
         import imaplib
         import email
         from email.utils import parsedate_to_datetime
-        from datetime import datetime, timezone
 
-        # 记录开始时间,只提取此时间之后收到的邮件(避免使用旧验证码)
-        # 使用UTC时间戳,因为邮件时间也是UTC
-        # 减去60秒作为缓冲,避免因为时间差导致新邮件被误判为旧邮件
-        min_email_time = start - 60
-        print(f"  🕐 只提取 {datetime.fromtimestamp(min_email_time, tz=timezone.utc).strftime('%H:%M:%S UTC')} 之后收到的邮件")
-
-        while time.time() - start < timeout:
+        while time.time() - start_time < timeout:
             mail = None
             try:
                 mail = imaplib.IMAP4_SSL(IMAP_SERVER, timeout=30)
                 mail.login(IMAP_USER, IMAP_PASS)
                 mail.select("inbox")
 
-                # 直接获取最近的 10 封邮件，不使用 SEARCH 命令
+                # 直接获取最近的 5 封邮件，不使用 SEARCH 命令
                 email_ids = []
                 try:
                     status, messages = mail.select("inbox")
                     if status == "OK":
                         msg_count = int(messages[0]) if messages and messages[0] else 0
                         if msg_count > 0:
-                            start_idx = max(1, msg_count - 9)
+                            start_idx = max(1, msg_count - 4)
                             for i in range(msg_count, start_idx - 1, -1):
                                 email_ids.append(str(i).encode())
                             print(
@@ -753,7 +748,7 @@ def wait_for_verification_code(session, email_address, dm_token, timeout=300, st
                             )
                 except Exception as e:
                     print(f"  ⚠️ 获取邮件数量失败: {e}")
-                    for i in range(10, 0, -1):
+                    for i in range(5, 0, -1):
                         email_ids.append(str(i).encode())
 
                 for eid in email_ids:
@@ -816,9 +811,13 @@ def wait_for_verification_code(session, email_address, dm_token, timeout=300, st
                                     # 检查邮件时间,只提取开始时间之后收到的邮件(避免使用旧验证码)
                                     date_header = str(msg.get("Date", ""))
                                     try:
-                                        email_time = parsedate_to_datetime(date_header).timestamp()
-                                        if email_time < min_email_time:
-                                            print(f"  ⏭️ 跳过旧邮件 (时间: {date_header[:30]})")
+                                        email_time = parsedate_to_datetime(
+                                            date_header
+                                        ).timestamp()
+                                        if email_time <= start_time:
+                                            print(
+                                                f"  ⏭️ 跳过旧邮件 (时间: {date_header[:30]})"
+                                            )
                                             continue
                                     except Exception as e:
                                         print(f"  ⚠️ 解析邮件时间失败: {e}")
@@ -826,8 +825,11 @@ def wait_for_verification_code(session, email_address, dm_token, timeout=300, st
 
                                     # 是新邮件，等待2-4秒后再提取验证码,避免验证太快
                                     import random
+
                                     delay = random.uniform(2, 4)
-                                    print(f"  ⏳ 匹配到新邮件,等待 {delay:.1f} 秒后提取验证码...")
+                                    print(
+                                        f"  ⏳ 匹配到新邮件,等待 {delay:.1f} 秒后提取验证码..."
+                                    )
                                     time.sleep(delay)
 
                                     content = ""
@@ -896,7 +898,7 @@ def wait_for_verification_code(session, email_address, dm_token, timeout=300, st
                     except:
                         pass
 
-            elapsed = int(time.time() - start)
+            elapsed = int(time.time() - start_time)
             print(f"    IMAP 等待中... ({elapsed}s/{timeout}s)")
             time.sleep(5)
 
@@ -920,7 +922,7 @@ def wait_for_verification_code(session, email_address, dm_token, timeout=300, st
                 return code
 
     poll_count = 0
-    while time.time() - start < timeout:
+    while time.time() - start_time < timeout:
         poll_count += 1
         emails = fetch_emails(session, email_address, dm_token)
         if emails:
@@ -1294,14 +1296,22 @@ class ProtocolRegistrar:
                 print("❌ 步骤2失败：用户注册失败")
                 return False, email, password
 
-            time.sleep(1)
+            start = time.time()
+            # 记录开始时间，后续仅提取此时间之后收到的邮件（严格基于 UTC 时间戳比较）
+            pre_verification_ts = start
+            print(
+                f"  🕐 仅提取 {datetime.fromtimestamp(pre_verification_ts, tz=timezone.utc).strftime('%H:%M:%S UTC')} 之后收到的邮件"
+            )
+            time.sleep(2)
 
             # ===== 步骤3：触发验证码发送 =====
             self.step3_send_otp()
 
-            # 等待验证码（通过 DuckMail API）
+            # 等待验证码
             mail_session = create_session()  # 用独立会话访问邮箱 API
-            code = wait_for_verification_code(mail_session, email, dm_token)
+            code = wait_for_verification_code(
+                mail_session, email, dm_token, start_time=pre_verification_ts
+            )
             if not code:
                 print("❌ 未收到验证码")
                 return False, email, password
@@ -1576,18 +1586,19 @@ def perform_codex_oauth_login_http(
             print("  ❌ 无 dm_token，无法接收验证码")
             return None
 
-        mail_session = create_session()
-
-        # 关键认知：当 password/verify 返回 email_otp_verification 时，
-        # 服务端已经自动发送了 OTP 邮件！立即记录开始时间。
-
         # 记录开始时间戳,用于时间戳筛选
         otp_start_time = time.time()
+        print(
+            f"  🕐 仅提取 {datetime.fromtimestamp(otp_start_time, tz=timezone.utc).strftime('%H:%M:%S UTC')} 之后收到的邮件"
+        )
+        time.sleep(2)
 
         # 轮询等待邮件到达，收集所有验证码并依次尝试
         print(f"  ⏳ 开始监视邮箱...")
         code = None
         tried_codes = set()  # 已尝试过的验证码，避免重复提交
+
+        mail_session = create_session()
 
         # 使用步骤3的 headers 作为基础，保持 session 连续性
         headers["referer"] = f"{OAUTH_ISSUER}/email-verification"
@@ -1601,7 +1612,9 @@ def perform_codex_oauth_login_http(
             headers["openai-sentinel-token"] = sentinel_otp
 
         # 传递开始时间,确保时间戳筛选正确
-        code = wait_for_verification_code(mail_session, email, dm_token, timeout=300, start_time=otp_start_time)
+        code = wait_for_verification_code(
+            mail_session, email, dm_token, timeout=300, start_time=otp_start_time-2
+        )
 
         if code:
             print(f"  🔢 尝试验证码: {code}")
@@ -2152,12 +2165,12 @@ def perform_codex_oauth_login(email, password, registrar_session=None):
                 current_url = driver.current_url
                 # 检查是否已到达回调（极快通过的情况）
                 if "localhost" in current_url and "code=" in current_url:
-                    print(f"  ✅ 快速到达回调（第 {i+1}s）")
+                    print(f"  ✅ 快速到达回调（第 {i + 1}s）")
                     break
                 # 检查是否有输入框或按钮（登录页加载完成）
                 inputs = driver.find_elements(By.CSS_SELECTOR, "input")
                 if inputs:
-                    print(f"  ✅ 登录页面加载完成（第 {i+1}s）")
+                    print(f"  ✅ 登录页面加载完成（第 {i + 1}s）")
                     break
             except Exception:
                 pass
@@ -2677,7 +2690,7 @@ def run_batch():
 
     if workers == 1:
         for i in range(TOTAL_ACCOUNTS):
-            print(f"\n--- [{i+1}/{TOTAL_ACCOUNTS}] ---")
+            print(f"\n--- [{i + 1}/{TOTAL_ACCOUNTS}] ---")
 
             email, password, success, t_reg, t_total = register_one(
                 worker_id=0, task_index=i + 1, total=TOTAL_ACCOUNTS
@@ -2693,7 +2706,7 @@ def run_batch():
             wall = time.time() - batch_start
             throughput = wall / ok if ok > 0 else 0
             print(
-                f"📊 {i+1}/{TOTAL_ACCOUNTS} | ✅{ok} ❌{fail} | 吞吐 {throughput:.1f}s/个 | 已用 {wall:.0f}s"
+                f"📊 {i + 1}/{TOTAL_ACCOUNTS} | ✅{ok} ❌{fail} | 吞吐 {throughput:.1f}s/个 | 已用 {wall:.0f}s"
             )
 
             if i < TOTAL_ACCOUNTS - 1:
