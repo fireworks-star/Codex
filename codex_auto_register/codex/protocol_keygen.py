@@ -570,6 +570,24 @@ def generate_sub_email_suffix(max_suffix_length=16):
     length = random.randint(4, max_suffix_length)
     return "".join(random.choice(chars) for _ in range(length))
 
+def _load_expired_emails():
+    """从 expired_auth_files.txt 中加载失效邮箱列表"""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    expired_file = os.path.join(base_dir, "expired_auth_files.txt")
+    if not os.path.exists(expired_file):
+        return set()
+    
+    expired_emails = set()
+    try:
+        with open(expired_file, "r", encoding="utf-8") as f:
+            for line in f:
+                if "邮箱:" in line:
+                    email = line.split("邮箱:")[1].strip()
+                    if email and "@" in email:
+                        expired_emails.add(email.lower())
+    except Exception as e:
+        print(f"  ⚠️ 读取失效邮箱列表失败: {e}")
+    return expired_emails
 
 def create_temp_email(session):
     """通过 API 创建临时邮箱账号，支持自定义域或 IMAP 用户子邮箱，返回 (email, dm_token)"""
@@ -579,19 +597,39 @@ def create_temp_email(session):
     if IMAP_USER:
         if "@" in IMAP_USER:
             main_local, main_domain = IMAP_USER.rsplit("@", 1)
+            
+            # 加载失效邮箱列表
+            expired_emails = _load_expired_emails()
 
             # 计算可用后缀长度，确保总长度不超过64个字符
             max_suffix = 64 - len(main_local) - 1 - len(main_domain)
             max_suffix = min(16, max(4, max_suffix))
-
-            suffix = generate_sub_email_suffix(max_suffix)
-            username = f"{main_local}{suffix}"
-            email = f"{username}@{main_domain}"
-
-            # 再次检查总长度
-            if len(email) > 64:
-                print(f"  ⚠️ 生成的邮箱地址过长 ({len(email)} > 64)，使用 DuckMail")
-            else:
+            
+            # 尝试生成不与失效邮箱重复的子邮箱
+            max_attempts = 10
+            for attempt in range(max_attempts):
+                suffix = generate_sub_email_suffix(max_suffix)
+                username = f"{main_local}{suffix}"
+                email = f"{username}@{main_domain}"
+                
+                # 检查邮箱是否在失效列表中
+                if email.lower() in expired_emails:
+                    if attempt < max_attempts - 1:
+                        print(f"  ⚠️ 生成的邮箱 {email} 已失效，重新生成...")
+                        continue
+                    else:
+                        print(f"  ⚠️ 多次尝试后仍生成失效邮箱，使用 DuckMail")
+                        break
+                
+                # 再次检查总长度
+                if len(email) > 64:
+                    if attempt < max_attempts - 1:
+                        print(f"  ⚠️ 生成的邮箱地址过长 ({len(email)} > 64)，重新生成...")
+                        continue
+                    else:
+                        print(f"  ⚠️ 生成的邮箱地址过长 ({len(email)} > 64)，使用 DuckMail")
+                        break
+                
                 print(f"  ✅ 使用 IMAP 用户子邮箱: {email} (长度: {len(email)})")
                 return email, "CUSTOM_IMAP_TOKEN"
 
