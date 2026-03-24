@@ -17,6 +17,7 @@ import traceback
 import secrets
 import hashlib
 import base64
+from email.utils import parsedate_to_datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urlparse, parse_qs, urlencode
 
@@ -607,15 +608,15 @@ def create_temp_email():
         # 解析主邮箱
         if "@" in IMAP_USER:
             main_local, main_domain = IMAP_USER.rsplit("@", 1)
-            
+
             # 计算可用后缀长度，确保总长度不超过64个字符
             max_suffix = 64 - len(main_local) - 1 - len(main_domain)
             max_suffix = min(16, max(4, max_suffix))
-            
+
             suffix = _generate_sub_email_suffix(max_suffix)
             email_local = f"{main_local}{suffix}"
             email = f"{email_local}@{main_domain}"
-            
+
             # 再次检查总长度
             if len(email) > 64:
                 print(f"  ⚠️ 生成的邮箱地址过长 ({len(email)} > 64)，使用 DuckMail")
@@ -755,6 +756,8 @@ def _extract_verification_code(email_content: str):
 def wait_for_verification_email(mail_token: str, timeout: int = 120):
     """等待并提取 OpenAI 验证码"""
     start_time = time.time()
+    # 在开始验证前记录一个 UTC 时间戳，后续仅提取时间戳大于此时间戳的邮件
+    pre_verification_ts = start_time
 
     while time.time() - start_time < timeout:
         messages = _fetch_emails_duckmail(mail_token)
@@ -897,7 +900,7 @@ class ChatGPTRegister:
     def _log(self, step, method, url, status, body=None):
         prefix = f"[{self.tag}] " if self.tag else ""
         lines = [
-            f"\n{'='*60}",
+            f"\n{'=' * 60}",
             f"{prefix}[Step] {step}",
             f"{prefix}[{method}] {url}",
             f"{prefix}[Status] {status}",
@@ -909,7 +912,7 @@ class ChatGPTRegister:
                 )
             except Exception:
                 lines.append(f"{prefix}[Response] {str(body)[:1000]}")
-        lines.append(f"{'='*60}")
+        lines.append(f"{'=' * 60}")
         with _print_lock:
             print("\n".join(lines))
 
@@ -940,21 +943,25 @@ class ChatGPTRegister:
         if IMAP_USER:
             if "@" in IMAP_USER:
                 main_local, main_domain = IMAP_USER.rsplit("@", 1)
-                
+
                 # 计算可用后缀长度，确保总长度不超过64个字符
                 max_suffix = 64 - len(main_local) - 1 - len(main_domain)
                 max_suffix = min(16, max(4, max_suffix))
-                
+
                 suffix = _generate_sub_email_suffix(max_suffix)
                 email_local = f"{main_local}{suffix}"
                 email = f"{email_local}@{main_domain}"
-                
+
                 # 再次检查总长度
                 if len(email) > 64:
-                    self._print(f"  ⚠️ 生成的邮箱地址过长 ({len(email)} > 64)，使用 DuckMail")
+                    self._print(
+                        f"  ⚠️ 生成的邮箱地址过长 ({len(email)} > 64)，使用 DuckMail"
+                    )
                 else:
                     password = _generate_password()
-                    self._print(f"  ✅ 使用 IMAP 用户子邮箱: {email} (长度: {len(email)})")
+                    self._print(
+                        f"  ✅ 使用 IMAP 用户子邮箱: {email} (长度: {len(email)})"
+                    )
                     return email, password, "CUSTOM_IMAP_TOKEN"
 
         if CUSTOM_DOMAIN:
@@ -1104,11 +1111,11 @@ class ChatGPTRegister:
             from email.utils import parsedate_to_datetime
             from datetime import datetime, timezone
 
-            # 记录开始时间,只提取此时间之后收到的邮件(避免使用旧验证码)
-            # 使用UTC时间戳,因为邮件时间也是UTC
-            # 减去60秒作为缓冲,避免因为时间差导致新邮件被误判为旧邮件
-            min_email_time = start_time - 60
-            self._print(f"[OTP] 只提取 {datetime.fromtimestamp(min_email_time, tz=timezone.utc).strftime('%H:%M:%S UTC')} 之后收到的邮件")
+            # 记录开始时间，后续仅提取此时间之后收到的邮件（严格基于 UTC 时间戳比较）
+            pre_verification_ts = start_time
+            self._print(
+                f"[OTP] 仅提取 {datetime.fromtimestamp(pre_verification_ts, tz=timezone.utc).strftime('%H:%M:%S UTC')} 之后收到的邮件"
+            )
 
             while time.time() - start_time < timeout:
                 try:
@@ -1209,12 +1216,18 @@ class ChatGPTRegister:
                                             # 检查邮件时间,只提取开始时间之后收到的邮件(避免使用旧验证码)
                                             date_header = str(msg.get("Date", ""))
                                             try:
-                                                email_time = parsedate_to_datetime(date_header).timestamp()
-                                                if email_time < min_email_time:
-                                                    self._print(f"[OTP] 跳过旧邮件 (时间: {date_header[:30]})")
+                                                email_time = parsedate_to_datetime(
+                                                    date_header
+                                                ).timestamp()
+                                                if email_time <= pre_verification_ts:
+                                                    self._print(
+                                                        f"[OTP] 跳过旧邮件 (时间: {date_header[:30]})"
+                                                    )
                                                     continue
                                             except Exception as e:
-                                                self._print(f"[OTP] 解析邮件时间失败: {e}")
+                                                self._print(
+                                                    f"[OTP] 解析邮件时间失败: {e}"
+                                                )
                                                 continue
 
                                             # 是新邮件，等待2-4秒后再提取验证码,避免验证太快
@@ -2118,10 +2131,10 @@ class ChatGPTRegister:
                 for otp_code in candidate_codes:
                     tried_codes.add(otp_code)
                     self._print(f"[OAuth] 尝试 OTP: {otp_code}")
-                    
+
                     # 在验证前增加2-4秒间隔,避免验证太快
                     _random_delay(2.0, 4.0)
-                    
+
                     try:
                         resp_otp = self.session.post(
                             f"{OAUTH_ISSUER}/api/accounts/email-otp/validate",
@@ -2276,12 +2289,12 @@ def _register_one(idx, total, proxy, output_file):
         birthdate = _random_birthdate()
 
         with _print_lock:
-            print(f"\n{'='*60}")
+            print(f"\n{'=' * 60}")
             print(f"  [{idx}/{total}] 注册: {email}")
             print(f"  ChatGPT密码: {chatgpt_password}")
             print(f"  邮箱密码: {email_pwd}")
             print(f"  姓名: {name} | 生日: {birthdate}")
-            print(f"{'='*60}")
+            print(f"{'=' * 60}")
 
         # 2. 执行注册流程
         reg.run_register(email, chatgpt_password, name, birthdate, mail_token)
@@ -2331,7 +2344,7 @@ def run_batch(
         return
 
     actual_workers = min(max_workers, total_accounts)
-    print(f"\n{'#'*60}")
+    print(f"\n{'#' * 60}")
     print(f"  ChatGPT 批量自动注册 (DuckMail 临时邮箱版)")
     print(f"  注册数量: {total_accounts} | 并发数: {actual_workers}")
     print(f"  DuckMail: {DUCKMAIL_API_BASE}")
@@ -2343,7 +2356,7 @@ def run_batch(
         print(f"  OAuth Client: {OAUTH_CLIENT_ID}")
         print(f"  Token输出: {TOKEN_JSON_DIR}/, {AK_FILE}, {RK_FILE}")
     print(f"  输出文件: {output_file}")
-    print(f"{'#'*60}\n")
+    print(f"{'#' * 60}\n")
 
     success_count = 0
     fail_count = 0
@@ -2373,13 +2386,13 @@ def run_batch(
 
     elapsed = time.time() - start_time
     avg = elapsed / total_accounts if total_accounts else 0
-    print(f"\n{'#'*60}")
+    print(f"\n{'#' * 60}")
     print(f"  注册完成! 耗时 {elapsed:.1f} 秒")
     print(f"  总数: {total_accounts} | 成功: {success_count} | 失败: {fail_count}")
     print(f"  平均速度: {avg:.1f} 秒/个")
     if success_count > 0:
         print(f"  结果文件: {output_file}")
-    print(f"{'#'*60}")
+    print(f"{'#' * 60}")
 
 
 def main():
