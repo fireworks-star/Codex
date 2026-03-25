@@ -12,7 +12,7 @@ PING localhost -n 3 >NUL
 echo ===================================================
 echo   [2/2] 正在启动前端 Web 管理面板...
 echo ===================================================
-cd /d d:\AI\PythonProject\Codex\Cli-Proxy-API-Management-Center-1.7.7
+cd /d d:\AI\PythonProject\Codex\Cli-Proxy-API-Management-Center-1.7.7\
 start /b "" cmd /c "npm run dev"
 
 echo ===================================================
