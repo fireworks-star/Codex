@@ -3,6 +3,7 @@ import os
 import urllib.request
 import urllib.error
 from datetime import datetime, timezone
+import sys
 
 
 def _parse_iso_datetime(value: str):
@@ -78,7 +79,7 @@ def _is_token_invalidated(access_token: str, proxy_url: str | None):
     opener = urllib.request.build_opener(*handlers)
 
     try:
-        with opener.open(request, timeout=12) as resp:
+        with opener.open(request, timeout=5) as resp:
             return False
     except urllib.error.HTTPError as exc:
         try:
@@ -90,6 +91,8 @@ def _is_token_invalidated(access_token: str, proxy_url: str | None):
                 return True
         except Exception:
             return False
+    except urllib.error.URLError:
+        return False
     except Exception:
         return False
     return False
@@ -124,6 +127,18 @@ def main():
         print(f"[清理] 未找到认证目录: {auth_dir}")
         return
 
+    print(f"[清理] 开始扫描认证目录: {auth_dir}")
+    
+    # 获取所有需要检查的文件
+    all_entries = [entry for entry in os.listdir(auth_dir) if entry.lower().endswith(".json")]
+    total_files = len(all_entries)
+    
+    if total_files == 0:
+        print("[清理] 没有需要检查的认证文件")
+        return
+    
+    print(f"[清理] 发现 {total_files} 个认证文件需要检查")
+
     now_aware = datetime.now(timezone.utc)
     removed = 0
     checked = 0
@@ -133,17 +148,27 @@ def main():
     
     # 收集失效的认证文件信息
     expired_files_info = []
-
-    for entry in os.listdir(auth_dir):
-        if not entry.lower().endswith(".json"):
-            continue
+    # 批量读取所有JSON文件内容，减少文件打开次数
+    file_contents = {}
+    for idx, entry in enumerate(all_entries, 1):
+        # 显示进度条
+        progress = idx / total_files
+        bar_length = 30
+        filled_length = int(bar_length * progress)
+        bar = '=' * filled_length + '-' * (bar_length - filled_length)
+        sys.stdout.write(f"\r[进度] [{bar}] {idx}/{total_files} ({progress:.1%})")
+        sys.stdout.flush()
+        
         file_path = os.path.join(auth_dir, entry)
         if not os.path.isfile(file_path):
             continue
         checked += 1
+        
+        # 批量读取文件内容
         try:
             with open(file_path, "r", encoding="utf-8") as f:
                 payload = json.load(f)
+                file_contents[file_path] = payload
         except Exception:
             continue
 
@@ -195,10 +220,14 @@ def main():
             if isinstance(refresh_token, str) and refresh_token:
                 expired_refresh_tokens.add(refresh_token.strip())
     
+    # 进度条完成
+    print()
+    
     # 生成失效邮箱记录文件
     if expired_files_info:
         base_dir = os.path.dirname(os.path.abspath(__file__))
         expired_log_path = os.path.join(base_dir, "expired_auth_files.txt")
+        print(f"[清理] 正在生成失效记录文件...")
         try:
             with open(expired_log_path, "a", encoding="utf-8") as f:
                 timestamp = datetime.now(timezone.utc).isoformat()
@@ -217,12 +246,23 @@ def main():
             print(f"[清理] 生成失效记录文件失败: {e}")
     
     # 删除失效的认证文件
-    for info in expired_files_info:
+    print(f"[清理] 正在删除 {len(expired_files_info)} 个失效认证文件...")
+    # 批量删除文件，提升性能
+    for idx, info in enumerate(expired_files_info, 1):
+        progress = idx / len(expired_files_info)
+        bar_length = 30
+        filled_length = int(bar_length * progress)
+        bar = '=' * filled_length + '-' * (bar_length - filled_length)
+        sys.stdout.write(f"\r[删除] [{bar}] {idx}/{len(expired_files_info)} ({progress:.1%})")
+        sys.stdout.flush()
+        
         try:
             os.remove(info["file_path"])
             removed += 1
         except Exception:
             continue
+    
+    print()
 
     # 同步清理账号与 token 文件
     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -231,11 +271,21 @@ def main():
     ak_path = os.path.join(base_dir, "ak.txt")
     rk_path = os.path.join(base_dir, "rk.txt")
 
+    # 清理 accounts.txt
     accounts_removed = 0
     if expired_emails and os.path.isfile(accounts_path):
+        print(f"[清理] 正在清理 accounts.txt...")
         lines = _load_lines(accounts_path) or []
-        kept = []
-        for line in lines:
+        total_lines = len(lines)
+        
+        for idx, line in enumerate(lines, 1):
+            progress = idx / total_lines
+            bar_length = 20
+            filled_length = int(bar_length * progress)
+            bar = '=' * filled_length + '-' * (bar_length - filled_length)
+            sys.stdout.write(f"\r[清理] [{bar}] {idx}/{total_lines} ({progress:.1%})")
+            sys.stdout.flush()
+            
             if not line.strip():
                 continue
             email = line.split(":", 1)[0].strip()
@@ -244,12 +294,23 @@ def main():
                 continue
             kept.append(line)
         _save_lines(accounts_path, kept)
+        print()
 
+    # 清理 registered_accounts.csv
     registered_removed = 0
     if expired_emails and os.path.isfile(registered_path):
+        print(f"[清理] 正在清理 registered_accounts.csv...")
         lines = _load_lines(registered_path) or []
-        kept = []
-        for line in lines:
+        total_lines = len(lines)
+        
+        for idx, line in enumerate(lines, 1):
+            progress = idx / total_lines
+            bar_length = 20
+            filled_length = int(bar_length * progress)
+            bar = '=' * filled_length + '-' * (bar_length - filled_length)
+            sys.stdout.write(f"\r[清理] [{bar}] {idx}/{total_lines} ({progress:.1%})")
+            sys.stdout.flush()
+            
             if not line.strip():
                 continue
             email = line.split(",", 1)[0].strip()
@@ -258,30 +319,53 @@ def main():
                 continue
             kept.append(line)
         _save_lines(registered_path, kept)
+        print()
 
+    # 清理 ak.txt
     ak_removed = 0
     if expired_access_tokens and os.path.isfile(ak_path):
+        print(f"[清理] 正在清理 ak.txt...")
         lines = _load_lines(ak_path) or []
-        kept = []
-        for line in lines:
+        total_lines = len(lines)
+        
+        for idx, line in enumerate(lines, 1):
+            progress = idx / total_lines
+            bar_length = 20
+            filled_length = int(bar_length * progress)
+            bar = '=' * filled_length + '-' * (bar_length - filled_length)
+            sys.stdout.write(f"\r[清理] [{bar}] {idx}/{total_lines} ({progress:.1%})")
+            sys.stdout.flush()
+            
             token = line.strip()
             if token in expired_access_tokens:
                 ak_removed += 1
                 continue
             kept.append(line)
         _save_lines(ak_path, kept)
+        print()
 
+    # 清理 rk.txt
     rk_removed = 0
     if expired_refresh_tokens and os.path.isfile(rk_path):
+        print(f"[清理] 正在清理 rk.txt...")
         lines = _load_lines(rk_path) or []
-        kept = []
-        for line in lines:
+        total_lines = len(lines)
+        
+        for idx, line in enumerate(lines, 1):
+            progress = idx / total_lines
+            bar_length = 20
+            filled_length = int(bar_length * progress)
+            bar = '=' * filled_length + '-' * (bar_length - filled_length)
+            sys.stdout.write(f"\r[清理] [{bar}] {idx}/{total_lines} ({progress:.1%})")
+            sys.stdout.flush()
+            
             token = line.strip()
             if token in expired_refresh_tokens:
                 rk_removed += 1
                 continue
             kept.append(line)
         _save_lines(rk_path, kept)
+        print()
 
     print(
         f"[清理] 检查 {checked} 个认证文件，删除 {removed} 个已失效文件。"

@@ -15,6 +15,7 @@ registered_accounts.csv
 registered_accounts.txt
 *.log
 *.tmp
+expired_auth_files.txt
 
 # ---------- 2925-mail-2api ----------
 2925-mail-2api/cookie.txt
