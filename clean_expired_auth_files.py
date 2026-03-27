@@ -277,6 +277,7 @@ def main():
         print(f"[清理] 正在清理 accounts.txt...")
         lines = _load_lines(accounts_path) or []
         total_lines = len(lines)
+        kept = []
         
         for idx, line in enumerate(lines, 1):
             progress = idx / total_lines
