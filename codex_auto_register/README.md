@@ -7,10 +7,11 @@
 本项目基于原项目 https://github.com/adminlove520/chatgpt_register 改造而来。
 
 当前仓库的主要差异：
-
 - 将注册codex邮箱服务从原先方案替换为 DuckMail API
 - 保留并扩展 Codex 协议 OAuth 流程
 - 输出 CLIProxyAPI v6 可识别的 Codex auth files
+- **优化了失效认证文件清理逻辑**：添加进度条、网络超时优化、批量文件操作
+- **优化了 IMAP 邮件筛选逻辑**：从时间戳筛选改为邮件总数变化筛选，减少邮件获取数量，提高验证码提取准确性
 
 ## 包含内容
 
@@ -18,17 +19,16 @@
 - `codex/protocol_keygen.py`：纯 HTTP 的 Codex OAuth 注册与 token 生成脚本
 - `duckmaildoc.md`：DuckMail API 参考文档(https://raw.githubusercontent.com/MoonWeSif/DuckMail/main/public/llm-api-docs.txt)
 - [management.html](https://github.com/router-for-me/Cli-Proxy-API-Management-Center/releases)(自动更新)
+- `clean_expired_auth_files.py`：失效认证文件清理脚本（已优化性能和添加进度条）
 
 ## 环境依赖
 
 根目录脚本：
-
 ```bash
 pip install curl_cffi
 ```
 
 Codex 脚本：
-
 ```bash
 pip install requests urllib3
 ```
@@ -38,7 +38,6 @@ pip install requests urllib3
 仓库只提交示例配置，不提交真实配置。
 
 使用前复制：
-
 ```bash
 copy config.example.json config.json
 copy codex\config.example.json codex\config.json
@@ -49,7 +48,6 @@ copy codex\config.example.json codex\config.json
 ## 根目录脚本
 
 运行：
-
 ```bash
 python chatgpt_register.py
 ```
@@ -73,7 +71,6 @@ python chatgpt_register.py
 ## Codex 协议脚本
 
 运行：
-
 ```bash
 python codex\protocol_keygen.py
 ```
@@ -81,12 +78,27 @@ python codex\protocol_keygen.py
 对应示例配置见 `codex/config.example.json`。
 
 该脚本会：
-
 - 使用 DuckMail 创建临时邮箱
 - 完成 ChatGPT 注册流程
 - 执行 Codex OAuth 登录并换取 token
 - 生成 CLIProxyAPI v6 兼容文件名的 token JSON
 - 可选上传到 CPA 管理接口
+
+## 失效认证文件清理
+
+运行：
+```bash
+python clean_expired_auth_files.py
+```
+
+该脚本会：
+- 扫描认证目录中的 JSON 文件
+- 检查 token 是否过期或被吊销
+- 生成失效认证文件记录（expired_auth_files.txt）
+- 删除失效的认证文件
+- 同步清理 accounts.txt、registered_accounts.csv、ak.txt、rk.txt
+- **显示实时进度条**：每个操作都有进度显示
+- **性能优化**：网络超时从12秒优化到5秒，批量文件操作
 
 ## 输出说明
 
@@ -101,12 +113,14 @@ python codex\protocol_keygen.py
 - `codex/registered_accounts.csv`
 - `codex/codex_tokens/`
 - `codex/codex_accounts_tokens/`
+- `expired_auth_files.txt`
 
 ## 仓库结构
 
 ```text
 codex_auto_register/
 ├── chatgpt_register.py                  # DuckMail 注册脚本
+├── clean_expired_auth_files.py           # 失效认证文件清理脚本
 ├── config.example.json                  # 注册工具配置模板
 ├── duckmaildoc.md                       # DuckMail API 参考文档
 ├── README.md                            # 本文档

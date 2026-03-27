@@ -32,6 +32,7 @@ Codex/
 │
 ├── start_all.bat                        # 一键启动全部服务
 ├── start_proxy.bat                      # 仅启动反代 + 前端（不含注册）
+├── start_register.bat                   # 仅启动自动注册脚本（仅注册）
 ├── stop_all.bat                         # 一键停止全部服务
 └── .gitignore
 ```
@@ -43,7 +44,7 @@ Codex/
 ### 前置条件
 
 - **Node.js** ≥ 20.19 或 ≥ 22.12
-- **Python** ≥ 3.10（推荐通过 Conda 管理）
+- **Python** ≥ 3.10
 - **cli-proxy-api.exe**：从 [CLIProxyAPI Releases](https://github.com/router-for-me/CLIProxyAPI/releases) 下载
 
 ### 1. 配置网关
@@ -97,6 +98,7 @@ pip install curl_cffi requests
 |------|------|
 | `start_all.bat` | 启动全部服务（反代 + 前端 + 注册机） |
 | `start_proxy.bat` | **仅启动反代 + 前端**（不注册新号） |
+| `start_register.bat` | **仅启动自动注册脚本**（仅注册） |
 | `stop_all.bat` | 一键停止全部后台服务 |
 
 ```bash
@@ -105,6 +107,9 @@ pip install curl_cffi requests
 
 # 仅使用反代功能（已有账号池时推荐）
 .\start_proxy.bat
+
+# 仅启动自动注册脚本（不启动反代和前端）
+.\start_register.bat
 
 # 停止所有服务
 .\stop_all.bat
@@ -125,8 +130,9 @@ python clean_expired_auth_files.py
 该脚本会：
 - 扫描 `config.yaml` 中 `auth-dir` 指定的目录（默认为 `codex_auto_register/codex/codex_accounts_tokens/`）
 - 检查每个认证文件的过期时间
-- 删除已过期的认证文件
 - 主动验证 token 是否已被服务端吊销
+- 生成失效认证文件记录（expired_auth_files.txt）
+- 删除已过期的认证文件
 - 同步清理 `accounts.txt`、`registered_accounts.csv`、`ak.txt`、`rk.txt` 中的过期记录
 
 ---
@@ -147,10 +153,7 @@ python clean_expired_auth_files.py
 curl http://127.0.0.1:9544/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer your-api-key" \
-  -d '{
-    "model": "gpt-5",
-    "messages": [{"role": "user", "content": "Hello!"}]
-  }'
+  -d '{"model": "gpt-5","messages": [{"role": "user", "content": "Hello!"}]}'
 ```
 
 ### Python 示例
