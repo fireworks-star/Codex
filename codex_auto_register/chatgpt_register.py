@@ -1108,14 +1108,22 @@ class ChatGPTRegister:
             self._print(f"[OTP] 使用 IMAP 模式，目标邮箱: {target_email}")
             import imaplib
             import email
-            from email.utils import parsedate_to_datetime
-            from datetime import datetime, timezone
 
-            # 记录开始时间，后续仅提取此时间之后收到的邮件（严格基于 UTC 时间戳比较）
-            pre_verification_ts = start_time
-            self._print(
-                f"[OTP] 仅提取 {datetime.fromtimestamp(pre_verification_ts, tz=timezone.utc).strftime('%H:%M:%S UTC')} 之后收到的邮件"
-            )
+            # 记录初始邮箱总数
+            initial_msg_count = 0
+            try:
+                mail = imaplib.IMAP4_SSL(IMAP_SERVER, timeout=30)
+                mail.login(IMAP_USER, IMAP_PASS)
+                mail.select("inbox")
+                status, messages = mail.select("inbox")
+                if status == "OK":
+                    initial_msg_count = int(messages[0]) if messages and messages[0] else 0
+                mail.close()
+                mail.logout()
+                self._print(f"[OTP] 初始邮箱总数: {initial_msg_count}")
+            except Exception as e:
+                self._print(f"[OTP] 获取初始邮箱数量失败: {e}")
+                initial_msg_count = 0
 
             while time.time() - start_time < timeout:
                 try:
@@ -1123,28 +1131,29 @@ class ChatGPTRegister:
                     mail.login(IMAP_USER, IMAP_PASS)
                     mail.select("inbox")
 
-                    # 直接获取最近的 10 封邮件，不使用 SEARCH 命令
+                    # 获取当前邮箱总数
+                    current_msg_count = 0
                     email_ids = []
                     try:
-                        # 尝试获取邮件总数，然后获取最新的 10 封
                         status, messages = mail.select("inbox")
                         if status == "OK":
-                            msg_count = (
-                                int(messages[0]) if messages and messages[0] else 0
+                            current_msg_count = int(messages[0]) if messages and messages[0] else 0
+                            self._print(
+                                f"[OTP] 当前邮箱总数: {current_msg_count} (初始: {initial_msg_count})"
                             )
-                            if msg_count > 0:
-                                # 获取最新的 10 封邮件
-                                start = max(1, msg_count - 9)
-                                for i in range(msg_count, start - 1, -1):
-                                    email_ids.append(str(i).encode())
-                                self._print(
-                                    f"[OTP] 获取到 {len(email_ids)} 封邮件 (总数: {msg_count})"
-                                )
                     except Exception as e:
                         self._print(f"[OTP] 获取邮件数量失败: {e}")
-                        # 如果获取数量失败，直接尝试获取 1-10
-                        for i in range(10, 0, -1):
+                        current_msg_count = 0
+
+                    # 检查是否有新邮件
+                    if current_msg_count > initial_msg_count:
+                        self._print(f"[OTP] 检测到新邮件 (总数从 {initial_msg_count} 增加到 {current_msg_count})")
+
+                        # 获取时间最近的3封邮件
+                        start = max(1, current_msg_count - 2)
+                        for i in range(current_msg_count, start - 1, -1):
                             email_ids.append(str(i).encode())
+                        self._print(f"[OTP] 获取最近 {len(email_ids)} 封邮件")
 
                     if email_ids:
                         for eid in email_ids:
@@ -1211,23 +1220,6 @@ class ChatGPTRegister:
                                                 )
 
                                             if not email_match:
-                                                continue
-
-                                            # 检查邮件时间,只提取开始时间之后收到的邮件(避免使用旧验证码)
-                                            date_header = str(msg.get("Date", ""))
-                                            try:
-                                                email_time = parsedate_to_datetime(
-                                                    date_header
-                                                ).timestamp()
-                                                if email_time <= pre_verification_ts:
-                                                    self._print(
-                                                        f"[OTP] 跳过旧邮件 (时间: {date_header[:30]})"
-                                                    )
-                                                    continue
-                                            except Exception as e:
-                                                self._print(
-                                                    f"[OTP] 解析邮件时间失败: {e}"
-                                                )
                                                 continue
 
                                             # 是新邮件，等待2-4秒后再提取验证码,避免验证太快

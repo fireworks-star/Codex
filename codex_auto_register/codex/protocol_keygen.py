@@ -762,7 +762,22 @@ def wait_for_verification_code(
         print(f"  📧 使用 IMAP 模式，目标邮箱: {email_address}")
         import imaplib
         import email
-        from email.utils import parsedate_to_datetime
+
+        # 记录初始邮箱总数
+        initial_msg_count = 0
+        try:
+            mail = imaplib.IMAP4_SSL(IMAP_SERVER, timeout=30)
+            mail.login(IMAP_USER, IMAP_PASS)
+            mail.select("inbox")
+            status, messages = mail.select("inbox")
+            if status == "OK":
+                initial_msg_count = int(messages[0]) if messages and messages[0] else 0
+            mail.close()
+            mail.logout()
+            print(f"  📧 初始邮箱总数: {initial_msg_count}")
+        except Exception as e:
+            print(f"  ⚠️ 获取初始邮箱数量失败: {e}")
+            initial_msg_count = 0
 
         while time.time() - start_time < timeout:
             mail = None
@@ -771,23 +786,29 @@ def wait_for_verification_code(
                 mail.login(IMAP_USER, IMAP_PASS)
                 mail.select("inbox")
 
-                # 直接获取最近的 5 封邮件，不使用 SEARCH 命令
+                # 获取当前邮箱总数
+                current_msg_count = 0
                 email_ids = []
                 try:
                     status, messages = mail.select("inbox")
                     if status == "OK":
-                        msg_count = int(messages[0]) if messages and messages[0] else 0
-                        if msg_count > 0:
-                            start_idx = max(1, msg_count - 4)
-                            for i in range(msg_count, start_idx - 1, -1):
-                                email_ids.append(str(i).encode())
-                            print(
-                                f"  📧 获取到 {len(email_ids)} 封邮件 (总数: {msg_count})"
-                            )
+                        current_msg_count = int(messages[0]) if messages and messages[0] else 0
+                        print(
+                            f"  📧 当前邮箱总数: {current_msg_count} (初始: {initial_msg_count})"
+                        )
                 except Exception as e:
                     print(f"  ⚠️ 获取邮件数量失败: {e}")
-                    for i in range(5, 0, -1):
+                    current_msg_count = 0
+
+                # 检查是否有新邮件
+                if current_msg_count > initial_msg_count:
+                    print(f"  📧 检测到新邮件 (总数从 {initial_msg_count} 增加到 {current_msg_count})")
+
+                    # 获取时间最近的3封邮件
+                    start = max(1, current_msg_count - 2)
+                    for i in range(current_msg_count, start - 1, -1):
                         email_ids.append(str(i).encode())
+                    print(f"  📧 获取最近 {len(email_ids)} 封邮件")
 
                 for eid in email_ids:
                     try:
@@ -844,21 +865,6 @@ def wait_for_verification_code(
                                         print(f"  ✅ 邮件匹配主邮箱: {IMAP_USER}")
 
                                     if not email_match:
-                                        continue
-
-                                    # 检查邮件时间,只提取开始时间之后收到的邮件(避免使用旧验证码)
-                                    date_header = str(msg.get("Date", ""))
-                                    try:
-                                        email_time = parsedate_to_datetime(
-                                            date_header
-                                        ).timestamp()
-                                        if email_time <= start_time:
-                                            print(
-                                                f"  ⏭️ 跳过旧邮件 (时间: {date_header[:30]})"
-                                            )
-                                            continue
-                                    except Exception as e:
-                                        print(f"  ⚠️ 解析邮件时间失败: {e}")
                                         continue
 
                                     # 是新邮件，等待2-4秒后再提取验证码,避免验证太快
