@@ -4,12 +4,6 @@ title Codex AI Suite - 全部启动
 echo ===================================================
 echo   [1/3] 正在启动 CLI Proxy API 反代后端...
 echo ===================================================
-echo ===================================================
-echo   [预处理] 正在清理已失效的认证文件...
-echo ===================================================
-cd /d d:\AI\PythonProject\Codex
-python clean_expired_auth_files.py
-
 cd /d d:\AI\PythonProject\Codex
 start /b "" cli-proxy-api.exe
 
